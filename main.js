@@ -152,6 +152,12 @@ function extractTooltips(input) {
           type: 'leftmostToolMulticast',
           value: parseInt(multicastMatch[1])
         });
+      } else if (text.match(/Double the damage of your Large weapons/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'largeWeaponDoubleDamage'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -589,6 +595,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for large weapon double damage aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'largeWeaponDoubleDamage'))) {
+    auras[auraCounter] = createLargeWeaponDoubleDamageAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -760,6 +772,47 @@ function createLeftmostToolMulticastAura(id) {
   };
 }
 
+function createLargeWeaponDoubleDamageAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'DamageAmount',
+      Operation: 'Multiply',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 2,
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalAnd',
+          Conditions: [
+            {
+              $type: 'TCardConditionalTag',
+              Tags: [
+                'Weapon',
+              ],
+              Operator: 'Any',
+            },
+            {
+              $type: 'TCardConditionalSize',
+              Sizes: [
+                'Large',
+              ],
+              IsNot: false,
+            },
+          ],
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
 function createTiers(tooltips, abilities, auras) {
   const tiers = {};
   const tierNames = ['Bronze', 'Silver', 'Gold', 'Diamond'];
@@ -855,6 +908,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
 
   // Add leftmost tool multicast tooltip
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'leftmostToolMulticast')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
+  // Add large weapon double damage tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'largeWeaponDoubleDamage')) {
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
@@ -1136,6 +1195,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: multicastTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add large weapon double damage tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithDoubleDamage = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'largeWeaponDoubleDamage')
+    );
+
+    if (firstTierWithDoubleDamage) {
+      const doubleDamageTooltip = tooltips.passive[firstTierWithDoubleDamage].find(t => t.type === 'largeWeaponDoubleDamage');
+      localization.Tooltips.push({
+        Content: {
+          Text: doubleDamageTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
