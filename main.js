@@ -187,6 +187,14 @@ function extractTooltips(input) {
           text,
           type: 'combatDoubleItemValue'
         });
+      } else if (text.match(/Enemy cooldowns are increased by (\d+) second/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const cooldownMatch = text.match(/increased by (\d+) second/);
+        tooltips.passive[tier].push({
+          text,
+          type: 'enemyCooldownIncrease',
+          value: parseInt(cooldownMatch[1])
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -779,6 +787,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for enemy cooldown increase aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'enemyCooldownIncrease'))) {
+    auras[auraCounter] = createEnemyCooldownIncreaseAura(auraCounter, tooltips);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -1049,6 +1063,53 @@ function createOpponentWeaponDoubleDamageAura(id) {
   };
 }
 
+function createEnemyCooldownIncreaseAura(id, tooltips) {
+  // Find the cooldown increase value from tooltips
+  let value = 1000; // Default to 1 second in milliseconds
+  
+  if (tooltips.passive) {
+    const allTiers = Object.values(tooltips.passive);
+    for (const tier of allTiers) {
+      if (!tier) continue;
+      
+      const cooldownTooltip = tier.find(t => t.type === 'enemyCooldownIncrease');
+      if (cooldownTooltip) {
+        value = cooldownTooltip.value * 1000; // Convert to milliseconds
+        break;
+      }
+    }
+  }
+  
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'CooldownMax',
+      Operation: 'Add',
+      Value: {
+        $type: 'TFixedValue',
+        Value: value,
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'OpponentHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalAttribute',
+          Attribute: 'CooldownMax',
+          ComparisonOperator: 'GreaterThan',
+          ComparisonValue: {
+            $type: 'TFixedValue',
+            Value: 0,
+          },
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
 function createTiers(tooltips, abilities, auras) {
   const tiers = {};
   const tierNames = ['Bronze', 'Silver', 'Gold', 'Diamond'];
@@ -1180,6 +1241,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add enemy cooldown increase tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'enemyCooldownIncrease')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1238,6 +1305,7 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
   } else if (!tooltips.passive || !Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
     // Only add default Multicast if we're not using the aura and don't have a combat double item value
     if (!(tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue'))) {
+      // Always include Multicast for enemy cooldown increase case
       tier.Attributes.Multicast = 1;
     }
   }
@@ -1566,6 +1634,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: doubleValueTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add enemy cooldown increase tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithCooldownIncrease = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'enemyCooldownIncrease')
+    );
+
+    if (firstTierWithCooldownIncrease) {
+      const cooldownIncreaseTooltip = tooltips.passive[firstTierWithCooldownIncrease].find(t => t.type === 'enemyCooldownIncrease');
+      localization.Tooltips.push({
+        Content: {
+          Text: cooldownIncreaseTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
