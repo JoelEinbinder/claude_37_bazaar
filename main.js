@@ -158,6 +158,14 @@ function extractTooltips(input) {
           text,
           type: 'largeWeaponDoubleDamage'
         });
+      } else if (text.match(/When you Freeze, Reload a Weapon (\d+) ammo/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const reloadMatch = text.match(/Reload a Weapon (\d+) ammo/);
+        tooltips.passive[tier].push({
+          text,
+          type: 'freezeReloadWeapon',
+          value: parseInt(reloadMatch[1])
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -221,6 +229,12 @@ function createAbilities(tooltips) {
     abilities[abilityCounter] = createBurnAbility(abilityCounter);
     
     abilityCounter += 2;
+  }
+
+  // Check for freeze reload weapon ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'freezeReloadWeapon'))) {
+    abilities[abilityCounter] = createFreezeReloadWeaponAbility(abilityCounter);
+    abilityCounter++;
   }
 
   return abilities;
@@ -558,6 +572,58 @@ function createBurnTrackingAbility(id) {
     },
     Prerequisites: null,
     Priority: 'Immediate',
+  };
+}
+
+function createFreezeReloadWeaponAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnCardPerformedFreeze',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfBoard',
+        ExcludeSelf: false,
+        Conditions: null,
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardReload',
+      Target: {
+        $type: 'TTargetCardRandom',
+        ExcludeSelf: false,
+        TargetSection: 'SelfHand',
+        Conditions: {
+          $type: 'TCardConditionalAnd',
+          Conditions: [
+            {
+              $type: 'TCardConditionalAttribute',
+              Attribute: 'CooldownMax',
+              ComparisonOperator: 'GreaterThan',
+              ComparisonValue: {
+                $type: 'TFixedValue',
+                Value: 0,
+              },
+            },
+            {
+              $type: 'TCardConditionalOr',
+              Conditions: [
+                {
+                  $type: 'TCardConditionalTag',
+                  Tags: [
+                    'Weapon',
+                  ],
+                  Operator: 'Any',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'Lowest',
   };
 }
 
@@ -918,6 +984,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add freeze reload weapon tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'freezeReloadWeapon')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -976,6 +1048,13 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
   } else if (!tooltips.passive || !Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
     // Only add default Multicast if we're not using the aura
     tier.Attributes.Multicast = 1;
+  }
+
+  // Add ReloadAmount and ReloadTargets for freeze reload weapon
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'freezeReloadWeapon')) {
+    const reloadTooltip = tooltips.passive[tierName].find(t => t.type === 'freezeReloadWeapon');
+    tier.Attributes.ReloadAmount = reloadTooltip.value;
+    tier.Attributes.ReloadTargets = 1;
   }
 
   return tier;
@@ -1214,6 +1293,24 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: doubleDamageTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add freeze reload weapon tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithFreezeReload = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'freezeReloadWeapon')
+    );
+
+    if (firstTierWithFreezeReload) {
+      localization.Tooltips.push({
+        Content: {
+          Text: 'When you Freeze, Reload a Weapon {ability.0} ammo.',
         },
         TooltipType: 'Passive',
         Prerequisites: null,
