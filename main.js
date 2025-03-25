@@ -132,11 +132,17 @@ function extractTooltips(input) {
           type: 'burn',
           value: parseInt(burnMatch[1])
         });
-      } else if (text.match(/Your Weapons have Lifesteal/)) {
+      } else if (text.match(/Your Weapons have Lifesteal/i)) {
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
         tooltips.passive[tier].push({
           text,
           type: 'weaponLifesteal'
+        });
+      } else if (text.match(/Your leftmost Weapon has lifesteal/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'leftmostWeaponLifesteal'
         });
       } else {
         // Default category for unrecognized tooltips
@@ -563,6 +569,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for leftmost weapon lifesteal aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostWeaponLifesteal'))) {
+    auras[auraCounter] = createLeftmostWeaponLifestealAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -641,6 +653,36 @@ function createWeaponLifestealAura(id) {
         $type: 'TTargetCardSection',
         TargetSection: 'SelfHand',
         ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Weapon',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
+function createLeftmostWeaponLifestealAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'Lifesteal',
+      Operation: 'Add',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 100,
+      },
+      Target: {
+        $type: 'TTargetCardXMost',
+        TargetSection: 'SelfHand',
+        TargetMode: 'LeftMostCard',
+        ExcludeSelf: true,
         Conditions: {
           $type: 'TCardConditionalTag',
           Tags: [
@@ -737,6 +779,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
 
   // Add weapon lifesteal tooltip
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'weaponLifesteal')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
+  // Add leftmost weapon lifesteal tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'leftmostWeaponLifesteal')) {
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
@@ -970,6 +1018,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: lifestealTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add leftmost weapon lifesteal tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithLeftmostLifesteal = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'leftmostWeaponLifesteal')
+    );
+
+    if (firstTierWithLeftmostLifesteal) {
+      const leftmostLifestealTooltip = tooltips.passive[firstTierWithLeftmostLifesteal].find(t => t.type === 'leftmostWeaponLifesteal');
+      localization.Tooltips.push({
+        Content: {
+          Text: leftmostLifestealTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
