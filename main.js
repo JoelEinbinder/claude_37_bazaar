@@ -195,6 +195,12 @@ function extractTooltips(input) {
           type: 'enemyCooldownIncrease',
           value: parseInt(cooldownMatch[1])
         });
+      } else if (text.match(/When you use a Tool, Reload an adjacent item/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'toolUseReloadAdjacent'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -275,6 +281,12 @@ function createAbilities(tooltips) {
   // Check for combat double item value ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'combatDoubleItemValue'))) {
     abilities[abilityCounter] = createCombatDoubleItemValueAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for tool use reload adjacent ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'toolUseReloadAdjacent'))) {
+    abilities[abilityCounter] = createToolUseReloadAdjacentAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -733,6 +745,48 @@ function createCombatDoubleItemValueAbility(id) {
     },
     Prerequisites: null,
     Priority: 'Medium',
+  };
+}
+
+function createToolUseReloadAdjacentAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnItemUsed',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Tool',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardReload',
+      Target: {
+        $type: 'TTargetCardPositional',
+        Origin: 'TriggerSource',
+        TargetMode: 'Neighbor',
+        IncludeOrigin: false,
+        Conditions: {
+          $type: 'TCardConditionalAttribute',
+          Attribute: 'AmmoMax',
+          ComparisonOperator: 'GreaterThan',
+          ComparisonValue: {
+            $type: 'TFixedValue',
+            Value: 0,
+          },
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'Lowest',
   };
 }
 
@@ -1247,6 +1301,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add tool use reload adjacent tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'toolUseReloadAdjacent')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1314,6 +1374,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'freezeReloadWeapon')) {
     const reloadTooltip = tooltips.passive[tierName].find(t => t.type === 'freezeReloadWeapon');
     tier.Attributes.ReloadAmount = reloadTooltip.value;
+    tier.Attributes.ReloadTargets = 1;
+  }
+
+  // Add ReloadAmount and ReloadTargets for tool use reload adjacent
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'toolUseReloadAdjacent')) {
+    tier.Attributes.ReloadAmount = 99; // Special case for full reload
     tier.Attributes.ReloadTargets = 1;
   }
 
@@ -1653,6 +1719,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: cooldownIncreaseTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add tool use reload adjacent tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithToolReloadAdjacent = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'toolUseReloadAdjacent')
+    );
+
+    if (firstTierWithToolReloadAdjacent) {
+      const toolReloadTooltip = tooltips.passive[firstTierWithToolReloadAdjacent].find(t => t.type === 'toolUseReloadAdjacent');
+      localization.Tooltips.push({
+        Content: {
+          Text: toolReloadTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
