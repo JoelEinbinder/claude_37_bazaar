@@ -144,6 +144,14 @@ function extractTooltips(input) {
           text,
           type: 'leftmostWeaponLifesteal'
         });
+      } else if (text.match(/Your leftmost Tool has \+(\d+) Multicast/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const multicastMatch = text.match(/\+(\d+) Multicast/);
+        tooltips.passive[tier].push({
+          text,
+          type: 'leftmostToolMulticast',
+          value: parseInt(multicastMatch[1])
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -575,6 +583,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for leftmost tool multicast aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
+    auras[auraCounter] = createLeftmostToolMulticastAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -696,6 +710,56 @@ function createLeftmostWeaponLifestealAura(id) {
   };
 }
 
+function createLeftmostToolMulticastAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'Multicast',
+      Operation: 'Add',
+      Value: {
+        $type: 'TReferenceValueCardAttribute',
+        Target: {
+          $type: 'TTargetCardSelf',
+          Conditions: null,
+        },
+        AttributeType: 'Custom_0',
+        DefaultValue: 0,
+        Modifier: null,
+      },
+      Target: {
+        $type: 'TTargetCardXMost',
+        TargetSection: 'SelfHand',
+        TargetMode: 'LeftMostCard',
+        ExcludeSelf: true,
+        Conditions: {
+          $type: 'TCardConditionalAnd',
+          Conditions: [
+            {
+              $type: 'TCardConditionalAttribute',
+              Attribute: 'CooldownMax',
+              ComparisonOperator: 'GreaterThan',
+              ComparisonValue: {
+                $type: 'TFixedValue',
+                Value: 0,
+              },
+            },
+            {
+              $type: 'TCardConditionalTag',
+              Tags: [
+                'Tool',
+              ],
+              Operator: 'Any',
+            },
+          ],
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
 function createTiers(tooltips, abilities, auras) {
   const tiers = {};
   const tierNames = ['Bronze', 'Silver', 'Gold', 'Diamond'];
@@ -718,13 +782,13 @@ function createTiers(tooltips, abilities, auras) {
 
 function createTierInfo(tierName, tooltips, abilities, auras) {
   const tier = {
-    Attributes: {
-      Multicast: 1
-    },
-    AbilityIds: Object.keys(abilities),
-    AuraIds: Object.keys(auras),
-    TooltipIds: []
+    Attributes: {}
   };
+
+  // Set ability and aura IDs
+  tier.AbilityIds = Object.keys(abilities);
+  tier.AuraIds = Object.keys(auras);
+  tier.TooltipIds = [];
 
   // Set tooltip IDs based on detected abilities and auras
   let tooltipIdCounter = 0;
@@ -789,6 +853,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add leftmost tool multicast tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'leftmostToolMulticast')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -837,6 +907,16 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     const burnTooltip = tooltips.passive[tierName].find(t => t.type === 'burn');
     tier.Attributes.BurnApplyAmount = burnTooltip.value;
     tier.Attributes.Custom_0 = 0; // For tracking if burn was already applied
+  }
+
+  // Add Custom_0 for leftmost tool multicast
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'leftmostToolMulticast')) {
+    const multicastTooltip = tooltips.passive[tierName].find(t => t.type === 'leftmostToolMulticast');
+    tier.Attributes.Custom_0 = multicastTooltip.value;
+    // Don't add Multicast attribute when we're using the aura to apply it
+  } else if (!tooltips.passive || !Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
+    // Only add default Multicast if we're not using the aura
+    tier.Attributes.Multicast = 1;
   }
 
   return tier;
@@ -1037,6 +1117,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: leftmostLifestealTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add leftmost tool multicast tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithMulticast = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'leftmostToolMulticast')
+    );
+
+    if (firstTierWithMulticast) {
+      const multicastTooltip = tooltips.passive[firstTierWithMulticast].find(t => t.type === 'leftmostToolMulticast');
+      localization.Tooltips.push({
+        Content: {
+          Text: multicastTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
