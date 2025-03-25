@@ -94,6 +94,15 @@ function extractTooltips(input) {
             value: parseInt(damageMatch[1])
           });
         }
+      } else if (text.match(/When you Heal, charge (\d+) Poison item (\d+) second/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const chargeMatch = text.match(/charge (\d+) Poison item (\d+) second/i);
+        tooltips.passive[tier].push({
+          text,
+          type: 'healChargePoisonItem',
+          targets: parseInt(chargeMatch[1]),
+          value: parseInt(chargeMatch[2])
+        });
       } else if (text.includes("Shield value")) {
         if (!tooltips.active[tier]) tooltips.active[tier] = [];
         tooltips.active[tier].push({
@@ -293,6 +302,12 @@ function createAbilities(tooltips) {
   // Check for tool use reload adjacent ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'toolUseReloadAdjacent'))) {
     abilities[abilityCounter] = createToolUseReloadAdjacentAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for heal charge poison item ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'healChargePoisonItem'))) {
+    abilities[abilityCounter] = createHealChargePoisonItemAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -793,6 +808,39 @@ function createToolUseReloadAdjacentAbility(id) {
     },
     Prerequisites: null,
     Priority: 'Lowest',
+  };
+}
+
+function createHealChargePoisonItemAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnCardPerformedHeal',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfBoard',
+        ExcludeSelf: false,
+        Conditions: null,
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardCharge',
+      Target: {
+        $type: 'TTargetCardRandom',
+        ExcludeSelf: false,
+        TargetSection: 'SelfHand',
+        Conditions: {
+          $type: 'TCardConditionalHiddenTag',
+          Tags: [
+            'Poison',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'High',
   };
 }
 
@@ -1367,6 +1415,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add heal charge poison item tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'healChargePoisonItem')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1426,7 +1480,10 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     // Only add default Multicast if we're not using the aura and don't have a combat double item value
     if (!(tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue'))) {
       // Always include Multicast for enemy cooldown increase case
-      tier.Attributes.Multicast = 1;
+      // Don't add Multicast for heal charge poison item
+      if (!(tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'healChargePoisonItem'))) {
+        tier.Attributes.Multicast = 1;
+      }
     }
   }
 
@@ -1448,6 +1505,14 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     const chargeTooltip = tooltips.passive[tierName].find(t => t.type === 'slowChargeItem');
     tier.Attributes.ChargeAmount = chargeTooltip.value * 1000; // Convert to milliseconds
     tier.Attributes.ChargeTargets = chargeTooltip.targets;
+  }
+
+  // Add ChargeAmount and ChargeTargets for heal charge poison item
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'healChargePoisonItem')) {
+    const chargeTooltip = tooltips.passive[tierName].find(t => t.type === 'healChargePoisonItem');
+    tier.Attributes.ChargeAmount = chargeTooltip.value * 1000; // Convert to milliseconds
+    tier.Attributes.ChargeTargets = chargeTooltip.targets;
+    tier.Attributes.PoisonApplyAmount = 3; // Special case for poison items
   }
 
   return tier;
@@ -1817,6 +1882,24 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: goldDamageTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add heal charge poison item tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithHealChargePoisonItem = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'healChargePoisonItem')
+    );
+
+    if (firstTierWithHealChargePoisonItem) {
+      localization.Tooltips.push({
+        Content: {
+          Text: 'When you Heal, charge {ability.0.targets} Poison item {ability.0} second(s).',
         },
         TooltipType: 'Passive',
         Prerequisites: null,
