@@ -1065,8 +1065,10 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
-  // Add both players' weapons double damage tooltip (only counts as one tooltip despite creating two auras)
+  // Add both players' weapons double damage tooltip (adds two tooltip IDs for the two auras)
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'bothPlayersWeaponDoubleDamage')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
