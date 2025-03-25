@@ -132,6 +132,12 @@ function extractTooltips(input) {
           type: 'burn',
           value: parseInt(burnMatch[1])
         });
+      } else if (text.match(/Your Weapons have Lifesteal/)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'weaponLifesteal'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -551,6 +557,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for weapon lifesteal aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'weaponLifesteal'))) {
+    auras[auraCounter] = createWeaponLifestealAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -607,6 +619,35 @@ function createShieldDamageAura(id) {
       Target: {
         $type: 'TTargetCardSelf',
         Conditions: null,
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
+function createWeaponLifestealAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'Lifesteal',
+      Operation: 'Add',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 100,
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Weapon',
+          ],
+          Operator: 'Any',
+        },
       },
     },
     Prerequisites: null,
@@ -690,6 +731,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
 
   // Add burn tooltip
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'burn')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
+  // Add weapon lifesteal tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'weaponLifesteal')) {
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
@@ -904,6 +951,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: 'The first time you use a Large item each fight, Burn {ability.0}.',
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add weapon lifesteal tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithLifesteal = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'weaponLifesteal')
+    );
+
+    if (firstTierWithLifesteal) {
+      const lifestealTooltip = tooltips.passive[firstTierWithLifesteal].find(t => t.type === 'weaponLifesteal');
+      localization.Tooltips.push({
+        Content: {
+          Text: lifestealTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
