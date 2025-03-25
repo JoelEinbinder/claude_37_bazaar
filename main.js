@@ -166,6 +166,12 @@ function extractTooltips(input) {
           type: 'freezeReloadWeapon',
           value: parseInt(reloadMatch[1])
         });
+      } else if (text.match(/Both players['']? weapons have double damage/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'bothPlayersWeaponDoubleDamage'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -667,6 +673,17 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for both players' weapons double damage auras
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'bothPlayersWeaponDoubleDamage'))) {
+    // Create player weapon double damage aura
+    auras[auraCounter] = createPlayerWeaponDoubleDamageAura(auraCounter);
+    auraCounter++;
+    
+    // Create opponent weapon double damage aura
+    auras[auraCounter] = createOpponentWeaponDoubleDamageAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -879,6 +896,64 @@ function createLargeWeaponDoubleDamageAura(id) {
   };
 }
 
+function createPlayerWeaponDoubleDamageAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'DamageAmount',
+      Operation: 'Multiply',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 2,
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Weapon',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
+function createOpponentWeaponDoubleDamageAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'DamageAmount',
+      Operation: 'Multiply',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 2,
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'OpponentHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Weapon',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
 function createTiers(tooltips, abilities, auras) {
   const tiers = {};
   const tierNames = ['Bronze', 'Silver', 'Gold', 'Diamond'];
@@ -986,6 +1061,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
 
   // Add freeze reload weapon tooltip
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'freezeReloadWeapon')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
+  // Add both players' weapons double damage tooltip (only counts as one tooltip despite creating two auras)
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'bothPlayersWeaponDoubleDamage')) {
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
@@ -1311,6 +1392,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: 'When you Freeze, Reload a Weapon {ability.0} ammo.',
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add both players' weapons double damage tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithBothPlayersDoubleDamage = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'bothPlayersWeaponDoubleDamage')
+    );
+
+    if (firstTierWithBothPlayersDoubleDamage) {
+      const bothPlayersTooltip = tooltips.passive[firstTierWithBothPlayersDoubleDamage].find(t => t.type === 'bothPlayersWeaponDoubleDamage');
+      localization.Tooltips.push({
+        Content: {
+          Text: bothPlayersTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
