@@ -121,6 +121,14 @@ function extractTooltips(input) {
           targets: 1, // Implied by "a Shield item"
           value: parseInt(chargeMatch[1])
         });
+      } else if (text.match(/When you Crit with an item, Reload another item (\d+) ammo/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const reloadMatch = text.match(/Reload another item (\d+) ammo/i);
+        tooltips.passive[tier].push({
+          text,
+          type: 'critReloadOtherItem',
+          value: parseInt(reloadMatch[1])
+        });
       } else if (text.includes("Shield value")) {
         if (!tooltips.active[tier]) tooltips.active[tier] = [];
         tooltips.active[tier].push({
@@ -338,6 +346,12 @@ function createAbilities(tooltips) {
   // Check for burn charge shield item ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'burnChargeShieldItem'))) {
     abilities[abilityCounter] = createBurnChargeShieldItemAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for crit reload other item ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'critReloadOtherItem'))) {
+    abilities[abilityCounter] = createCritReloadOtherItemAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -940,6 +954,50 @@ function createBurnChargeShieldItemAbility(id) {
   };
 }
 
+function createCritReloadOtherItemAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnCardCritted',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: null,
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardReload',
+      Target: {
+        $type: 'TTargetCardRandom',
+        ExcludeSelf: true,
+        TargetSection: 'SelfHand',
+        Conditions: {
+          $type: 'TCardConditionalAnd',
+          Conditions: [
+            {
+              $type: 'TCardConditionalAttribute',
+              Attribute: 'AmmoMax',
+              ComparisonOperator: 'GreaterThan',
+              ComparisonValue: {
+                $type: 'TFixedValue',
+                Value: 0,
+              },
+            },
+            {
+              $type: 'TCardConditionalTriggerSource',
+              IsNot: true,
+            },
+          ],
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'Low',
+  };
+}
+
 function createAuras(tooltips) {
   const auras = {};
   let auraCounter = 0;
@@ -1529,6 +1587,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add crit reload other item tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'critReloadOtherItem')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1598,6 +1662,14 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tier.Attributes.ReloadTargets = 1;
   }
 
+  // Add ReloadAmount and ReloadTargets for crit reload other item
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'critReloadOtherItem')) {
+    const reloadTooltip = tooltips.passive[tierName].find(t => t.type === 'critReloadOtherItem');
+    tier.Attributes.ReloadAmount = reloadTooltip.value;
+    tier.Attributes.ReloadTargets = 1;
+    // Do not add Multicast for crit reload other item
+  }
+
   // Add ChargeAmount and ChargeTargets for slow charge item
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'slowChargeItem')) {
     const chargeTooltip = tooltips.passive[tierName].find(t => t.type === 'slowChargeItem');
@@ -1628,11 +1700,14 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tier.Attributes.Multicast = 1;
   } else if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue')) {
     // Do not add Multicast attribute for combat double item value
+  } else if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'critReloadOtherItem')) {
+    // Do not add Multicast attribute for crit reload other item
   } else if (!tooltips.passive || !Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
     // Only add default Multicast if we don't have special cases that omit it
     if (!(tooltips.passive && tooltips.passive[tierName] && 
           (tooltips.passive[tierName].some(t => t.type === 'healChargePoisonItem') ||
-           tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue')))) {
+           tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue') ||
+           tooltips.passive[tierName].some(t => t.type === 'critReloadOtherItem')))) {
       tier.Attributes.Multicast = 1;
     }
   }
@@ -2058,6 +2133,24 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: 'When you Burn, charge a Shield item {ability.0} second(s).',
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add crit reload other item tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithCritReloadOtherItem = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'critReloadOtherItem')
+    );
+
+    if (firstTierWithCritReloadOtherItem) {
+      localization.Tooltips.push({
+        Content: {
+          Text: 'When you Crit with an item, Reload another item {ability.0} ammo.',
         },
         TooltipType: 'Passive',
         Prerequisites: null,
