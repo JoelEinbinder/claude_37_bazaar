@@ -201,6 +201,12 @@ function extractTooltips(input) {
           text,
           type: 'toolUseReloadAdjacent'
         });
+      } else if (text.match(/Your weapons have \+ damage equal to your gold/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'weaponDamageEqualToGold'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -847,6 +853,12 @@ function createAuras(tooltips) {
     auraCounter++;
   }
 
+  // Check for weapon damage equal to gold aura
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'weaponDamageEqualToGold'))) {
+    auras[auraCounter] = createWeaponDamageEqualToGoldAura(auraCounter);
+    auraCounter++;
+  }
+
   return auras;
 }
 
@@ -1164,6 +1176,48 @@ function createEnemyCooldownIncreaseAura(id, tooltips) {
   };
 }
 
+function createWeaponDamageEqualToGoldAura(id) {
+  return {
+    Id: id.toString(),
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TAuraActionCardModifyAttribute',
+      AttributeType: 'DamageAmount',
+      Operation: 'Add',
+      Value: {
+        $type: 'TReferenceValuePlayerAttribute',
+        Target: {
+          $type: 'TTargetPlayerRelative',
+          TargetMode: 'Self',
+          Conditions: null,
+        },
+        AttributeType: 'Gold',
+        DefaultValue: 0,
+        Modifier: {
+          ModifyMode: 'Multiply',
+          Value: {
+            $type: 'TFixedValue',
+            Value: 1,
+          },
+        },
+      },
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: false,
+        Conditions: {
+          $type: 'TCardConditionalTag',
+          Tags: [
+            'Weapon',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+  };
+}
+
 function createTiers(tooltips, abilities, auras) {
   const tiers = {};
   const tierNames = ['Bronze', 'Silver', 'Gold', 'Diamond'];
@@ -1303,6 +1357,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
 
   // Add tool use reload adjacent tooltip
   if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'toolUseReloadAdjacent')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
+  // Add weapon damage equal to gold tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'weaponDamageEqualToGold')) {
     tier.TooltipIds.push(tooltipIdCounter);
     tooltipIdCounter++;
   }
@@ -1738,6 +1798,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: toolReloadTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add weapon damage equal to gold tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithWeaponDamageEqualToGold = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'weaponDamageEqualToGold')
+    );
+
+    if (firstTierWithWeaponDamageEqualToGold) {
+      const goldDamageTooltip = tooltips.passive[firstTierWithWeaponDamageEqualToGold].find(t => t.type === 'weaponDamageEqualToGold');
+      localization.Tooltips.push({
+        Content: {
+          Text: goldDamageTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
