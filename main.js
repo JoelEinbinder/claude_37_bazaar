@@ -181,6 +181,12 @@ function extractTooltips(input) {
           targets: parseInt(chargeMatch[1]),
           value: parseInt(chargeMatch[2])
         });
+      } else if (text.match(/Your items have double value during combat/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        tooltips.passive[tier].push({
+          text,
+          type: 'combatDoubleItemValue'
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -255,6 +261,12 @@ function createAbilities(tooltips) {
   // Check for slow charge item ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'slowChargeItem'))) {
     abilities[abilityCounter] = createSlowChargeItemAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for combat double item value ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'combatDoubleItemValue'))) {
+    abilities[abilityCounter] = createCombatDoubleItemValueAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -680,6 +692,39 @@ function createSlowChargeItemAbility(id) {
     },
     Prerequisites: null,
     Priority: 'Low',
+  };
+}
+
+function createCombatDoubleItemValueAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnFightStarted',
+      CombatType: null,
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardModifyAttribute',
+      Value: {
+        $type: 'TFixedValue',
+        Value: 2,
+      },
+      AttributeType: 'SellPrice',
+      Operation: 'Multiply',
+      Duration: {
+        $type: 'TDeterminantDuration',
+        DurationType: 'UntilEndOfCombat',
+      },
+      TargetCount: null,
+      Target: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfHand',
+        ExcludeSelf: true,
+        Conditions: null,
+      },
+    },
+    Prerequisites: null,
+    Priority: 'Medium',
   };
 }
 
@@ -1129,6 +1174,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add combat double item value tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1185,8 +1236,10 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tier.Attributes.Custom_0 = multicastTooltip.value;
     // Don't add Multicast attribute when we're using the aura to apply it
   } else if (!tooltips.passive || !Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'leftmostToolMulticast'))) {
-    // Only add default Multicast if we're not using the aura
-    tier.Attributes.Multicast = 1;
+    // Only add default Multicast if we're not using the aura and don't have a combat double item value
+    if (!(tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue'))) {
+      tier.Attributes.Multicast = 1;
+    }
   }
 
   // Add ReloadAmount and ReloadTargets for freeze reload weapon
@@ -1494,6 +1547,25 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: 'When you slow, charge {ability.0.targets} item {ability.0} second(s).',
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add combat double item value tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithCombatDoubleValue = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'combatDoubleItemValue')
+    );
+
+    if (firstTierWithCombatDoubleValue) {
+      const doubleValueTooltip = tooltips.passive[firstTierWithCombatDoubleValue].find(t => t.type === 'combatDoubleItemValue');
+      localization.Tooltips.push({
+        Content: {
+          Text: doubleValueTooltip.text,
         },
         TooltipType: 'Passive',
         Prerequisites: null,
