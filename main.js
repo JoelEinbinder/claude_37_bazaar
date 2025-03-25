@@ -172,6 +172,15 @@ function extractTooltips(input) {
           text,
           type: 'bothPlayersWeaponDoubleDamage'
         });
+      } else if (text.match(/When you slow, charge (\d+) item (\d+) second/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const chargeMatch = text.match(/charge (\d+) item (\d+) second/);
+        tooltips.passive[tier].push({
+          text,
+          type: 'slowChargeItem',
+          targets: parseInt(chargeMatch[1]),
+          value: parseInt(chargeMatch[2])
+        });
       } else {
         // Default category for unrecognized tooltips
         if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
@@ -240,6 +249,12 @@ function createAbilities(tooltips) {
   // Check for freeze reload weapon ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'freezeReloadWeapon'))) {
     abilities[abilityCounter] = createFreezeReloadWeaponAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for slow charge item ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'slowChargeItem'))) {
+    abilities[abilityCounter] = createSlowChargeItemAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -630,6 +645,41 @@ function createFreezeReloadWeaponAbility(id) {
     },
     Prerequisites: null,
     Priority: 'Lowest',
+  };
+}
+
+function createSlowChargeItemAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnCardPerformedSlow',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfBoard',
+        ExcludeSelf: false,
+        Conditions: null,
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardCharge',
+      Target: {
+        $type: 'TTargetCardRandom',
+        ExcludeSelf: false,
+        TargetSection: 'SelfHand',
+        Conditions: {
+          $type: 'TCardConditionalAttribute',
+          Attribute: 'CooldownMax',
+          ComparisonOperator: 'GreaterThan',
+          ComparisonValue: {
+            $type: 'TFixedValue',
+            Value: 0,
+          },
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'Low',
   };
 }
 
@@ -1073,6 +1123,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add slow charge item tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'slowChargeItem')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1138,6 +1194,13 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     const reloadTooltip = tooltips.passive[tierName].find(t => t.type === 'freezeReloadWeapon');
     tier.Attributes.ReloadAmount = reloadTooltip.value;
     tier.Attributes.ReloadTargets = 1;
+  }
+
+  // Add ChargeAmount and ChargeTargets for slow charge item
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'slowChargeItem')) {
+    const chargeTooltip = tooltips.passive[tierName].find(t => t.type === 'slowChargeItem');
+    tier.Attributes.ChargeAmount = chargeTooltip.value * 1000; // Convert to milliseconds
+    tier.Attributes.ChargeTargets = chargeTooltip.targets;
   }
 
   return tier;
@@ -1413,6 +1476,24 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: bothPlayersTooltip.text,
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add slow charge item tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithSlowCharge = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'slowChargeItem')
+    );
+
+    if (firstTierWithSlowCharge) {
+      localization.Tooltips.push({
+        Content: {
+          Text: 'When you slow, charge {ability.0.targets} item {ability.0} second(s).',
         },
         TooltipType: 'Passive',
         Prerequisites: null,
