@@ -112,6 +112,15 @@ function extractTooltips(input) {
           targets: 1, // Implied by "a Shield item"
           value: parseInt(chargeMatch[1])
         });
+      } else if (text.match(/When you Burn, charge a Shield item (\d+) second/i)) {
+        if (!tooltips.passive[tier]) tooltips.passive[tier] = [];
+        const chargeMatch = text.match(/charge a Shield item (\d+) second/i);
+        tooltips.passive[tier].push({
+          text,
+          type: 'burnChargeShieldItem',
+          targets: 1, // Implied by "a Shield item"
+          value: parseInt(chargeMatch[1])
+        });
       } else if (text.includes("Shield value")) {
         if (!tooltips.active[tier]) tooltips.active[tier] = [];
         tooltips.active[tier].push({
@@ -323,6 +332,12 @@ function createAbilities(tooltips) {
   // Check for heal charge shield item ability
   if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'healChargeShieldItem'))) {
     abilities[abilityCounter] = createHealChargeShieldItemAbility(abilityCounter);
+    abilityCounter++;
+  }
+
+  // Check for burn charge shield item ability
+  if (tooltips.passive && Object.values(tooltips.passive).some(tier => tier && tier.some(t => t.type === 'burnChargeShieldItem'))) {
+    abilities[abilityCounter] = createBurnChargeShieldItemAbility(abilityCounter);
     abilityCounter++;
   }
 
@@ -864,6 +879,39 @@ function createHealChargeShieldItemAbility(id) {
     Id: id.toString(),
     Trigger: {
       $type: 'TTriggerOnCardPerformedHeal',
+      Subject: {
+        $type: 'TTargetCardSection',
+        TargetSection: 'SelfBoard',
+        ExcludeSelf: false,
+        Conditions: null,
+      },
+    },
+    ActiveIn: 'HandOnly',
+    Action: {
+      $type: 'TActionCardCharge',
+      Target: {
+        $type: 'TTargetCardRandom',
+        ExcludeSelf: false,
+        TargetSection: 'SelfHand',
+        Conditions: {
+          $type: 'TCardConditionalHiddenTag',
+          Tags: [
+            'Shield',
+          ],
+          Operator: 'Any',
+        },
+      },
+    },
+    Prerequisites: null,
+    Priority: 'High',
+  };
+}
+
+function createBurnChargeShieldItemAbility(id) {
+  return {
+    Id: id.toString(),
+    Trigger: {
+      $type: 'TTriggerOnCardPerformedBurn',
       Subject: {
         $type: 'TTargetCardSection',
         TargetSection: 'SelfBoard',
@@ -1475,6 +1523,12 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tooltipIdCounter++;
   }
 
+  // Add burn charge shield item tooltip
+  if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'burnChargeShieldItem')) {
+    tier.TooltipIds.push(tooltipIdCounter);
+    tooltipIdCounter++;
+  }
+
   // Add attributes
   if (tooltips.cooldown && tooltips.cooldown[tierName]) {
     tier.Attributes.CooldownMax = tooltips.cooldown[tierName].cooldown;
@@ -1564,6 +1618,13 @@ function createTierInfo(tierName, tooltips, abilities, auras) {
     tier.Attributes.ChargeAmount = chargeTooltip.value * 1000; // Convert to milliseconds
     tier.Attributes.ChargeTargets = chargeTooltip.targets;
     // Include Multicast for heal charge shield cases
+    tier.Attributes.Multicast = 1;
+  } else if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'burnChargeShieldItem')) {
+    // Add ChargeAmount and ChargeTargets for burn charge shield item
+    const chargeTooltip = tooltips.passive[tierName].find(t => t.type === 'burnChargeShieldItem');
+    tier.Attributes.ChargeAmount = chargeTooltip.value * 1000; // Convert to milliseconds
+    tier.Attributes.ChargeTargets = chargeTooltip.targets;
+    // Include Multicast for burn charge shield cases
     tier.Attributes.Multicast = 1;
   } else if (tooltips.passive && tooltips.passive[tierName] && tooltips.passive[tierName].some(t => t.type === 'combatDoubleItemValue')) {
     // Do not add Multicast attribute for combat double item value
@@ -1979,6 +2040,24 @@ function createLocalization(tooltips) {
       localization.Tooltips.push({
         Content: {
           Text: 'When you Heal, charge a Shield item {ability.0} second(s).',
+        },
+        TooltipType: 'Passive',
+        Prerequisites: null,
+      });
+    }
+  }
+
+  // Add burn charge shield item tooltip
+  if (passiveTiers.length > 0) {
+    const firstTierWithBurnChargeShieldItem = passiveTiers.find(tier => 
+      tooltips.passive[tier] &&
+      tooltips.passive[tier].some(t => t.type === 'burnChargeShieldItem')
+    );
+
+    if (firstTierWithBurnChargeShieldItem) {
+      localization.Tooltips.push({
+        Content: {
+          Text: 'When you Burn, charge a Shield item {ability.0} second(s).',
         },
         TooltipType: 'Passive',
         Prerequisites: null,
